@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>PhoWhisper WebSocket Client</title>
+</head>
+<body>
+  <h1>Real-Time Vietnamese Speech Recognition</h1>
+  <button id="start">Start Recording</button>
+  <button id="stop" disabled>Stop Recording</button>
+  <p>Transcription: <span id="transcription"></span></p>
+
+  <script>
+    const startButton = document.getElementById('start');
+    const stopButton = document.getElementById('stop');
+    const transcriptionSpan = document.getElementById('transcription');
+
+    let audioContext;
+    let scriptNode;
+    let socket;
+    let buffer = [];
+
+    startButton.onclick = async () => {
+      // Initialize AudioContext with 16000 Hz sample rate
+      audioContext = new AudioContext({ sampleRate: 16000 });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const source = audioContext.createMediaStreamSource(stream);
+      scriptNode = audioContext.createScriptProcessor(1024, 1, 1); // Buffer size of 1024 samples
+      source.connect(scriptNode);
+      scriptNode.connect(audioContext.destination); // Optional: hear the audio locally
+
+      // Accumulate PCM samples and send every second
+      scriptNode.onaudioprocess = (event) => {
+        const samples = event.inputBuffer.getChannelData(0); // Mono audio (first channel)
+        buffer.push(...samples);
+        if (buffer.length >= 16000) { // 1 second at 16000 Hz
+          socket.send(new Float32Array(buffer)); // Send as Float32Array
+          buffer = []; // Reset buffer
+        }
+      };
+
+      // Set up WebSocket
+      socket = new WebSocket('ws://localhost:8000/ws/audio');
+      socket.onopen = () => {
+        console.log('WebSocket connected');
+      };
+      socket.onmessage = (event) => {
+        transcriptionSpan.textContent = event.data; // Display transcription
+      };
+
+      startButton.disabled = true;
+      stopButton.disabled = false;
+    };
+
+    stopButton.onclick = () => {
+      scriptNode.disconnect();
+      audioContext.close();
+      socket.close();
+      startButton.disabled = false;
+      stopButton.disabled = true;
+    };
+  </script>
+</body>
+</html>
